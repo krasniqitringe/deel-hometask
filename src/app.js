@@ -206,30 +206,50 @@ app.post('/balances/deposit/:userId', async (req, res) => {
 
 app.get('/admin/best-profession', async (req, res) => {
     const { start, end } = req.query;
+    const { Profile, Job, Contract } = req.app.get('models');
 
     try {
-        const result = await sequelize.query(
-            `
-            SELECT p.profession, SUM(j.price) AS totalEarned
-            FROM Profiles p
-            JOIN Contracts c ON p.id = c.ContractorId
-            JOIN Jobs j ON c.id = j.ContractId
-            WHERE j.paid = true
-              AND j.paymentDate BETWEEN :start AND :end
-            GROUP BY p.profession
-            ORDER BY totalEarned DESC
-            LIMIT 1
-          `,
+        const dateFilter = {};
+        if (start && end) {
+          dateFilter["$Contractor.Jobs.paymentDate$"] = {
+            [Op.between]: [start, end],
+          };
+        }
+    
+        const result = await Profile.findOne({
+          attributes: [
+            "profession",
+            [
+              fn("SUM", col("Contractor.Jobs.price")),
+              "totalEarned",
+            ],
+          ],
+          where: dateFilter,
+          include: [
             {
-              replacements: { start, end },
-              type: sequelize.QueryTypes.SELECT,
-            }
-          );
+              model: Contract,
+              as: "Contractor",
+              required: false,
+              duplicating: false,
+              attributes: [],
+              include: [
+                {
+                  model: Job,
+                  required: false,
+                  duplicating: false,
+                  attributes: [],
+                },
+              ],
+            },
+          ],
+          group: ["Profile.profession"],
+          order: [[literal("totalEarned"), "DESC"]],
+        });
 
-
-        return res.status(200).json(result[0]);
+        return res.status(200).json(result);
 
     } catch (error) {
+        console.log(error)
       return res.status(500).json({ error: 'Internal Server Error' });
     }
 });
@@ -237,31 +257,51 @@ app.get('/admin/best-profession', async (req, res) => {
 
 app.get('/admin/best-clients', async (req, res) => {
     try {
-      const { start, end, limit = 2 } = req.query;
-      const { Profile } = req.app.get('models');
+        const { start, end } = req.query;
+        const { Profile, Job, Contract } = req.app.get('models');
+        const limit = req.query.limit || 2;
 
-  
-      const startDate = start ? new Date(start) : null;
-      const endDate = end ? new Date(end) : new Date();
-  
-      const bestClients = await Profile.findAll({
-        attributes: [
-          'id',
-          'firstName',
-          [literal('(SELECT SUM(price) FROM Jobs WHERE ContractId IN (SELECT id FROM Contracts WHERE ClientId = Profile.id) AND paid = true AND paymentDate BETWEEN :startDate AND :endDate)'), 'paid'],
-        ],
-        replacements: { startDate, endDate },
-        where: {
-          type: 'client',
-        },
-        group: ['Profile.id'],
-        order: [[literal('paid'), 'DESC']],
-        limit: parseInt(limit),
-      });
+
+        const dateFilter = {};
+        if (start && end) {
+            dateFilter["$Jobs.paymentDate$"] = {
+                [Op.between]: [start, end],
+            };
+        }
+
+        const result = await Contract.findAll({
+            attributes: [
+                "ClientId",
+                [fn("SUM", col("Jobs.price")), "totalPaid"],
+            ],
+            where: dateFilter,
+            include: [
+                {
+                    model: Job,
+                    attributes: [],
+                    required: false,
+                    duplicating: false,
+                    where: {
+                        paid: true,
+                    },
+                },
+                {
+                    model: Profile,
+                    as: "Client",
+                    required: false,
+                    duplicating: false,
+                    attributes: ["firstName", "lastName"],
+                },
+            ],
+            group: ["ClientId"],
+            order: [[Profile.sequelize.literal("totalPaid"), "DESC"]],
+            limit: parseInt(limit),
+        });
       
-      
-      res.status(200).json(bestClients);
+
+      res.status(200).json(result);
     } catch (error) {
+        console.log(error)
       res.status(500).json({ error: 'Internal Server Error' });
     }
   });
