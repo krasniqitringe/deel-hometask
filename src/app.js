@@ -99,5 +99,54 @@ app.get('/jobs/unpaid', getProfile, async (req, res) => {
     }
 });
 
+/**
+ * @returns success when job paid 
+ */
+
+app.post('/jobs/:job_id/pay', getProfile, async (req, res) => {
+    const { Profile, Job, Contract } = req.app.get('models');
+    const { job_id } = req.params;
+
+    try {
+        const job = await Job.findByPk(job_id, {
+            include: [
+                {
+                  model: Contract,
+                  include: [
+                    { model: Profile, as: 'Client' },
+                    { model: Profile, as: 'Contractor' },
+                  ],
+                },
+              ]
+        });
+
+        if (!job) {
+            return res.status(404).json({ error: 'Job not found' });
+          }
+
+        if(job.paid == true) {
+            return res.status(400).json({ error: 'Job has already been paid!' });
+        }
+
+        const profile = job.Contract.Client;
+        const contractor = job.Contract.Contractor
+
+        if (profile.balance >= job.price) {
+            const client_final_balance = profile.balance - job.price;
+            const contractor_final_balance = contractor.balance + job.price;
+
+            await profile.update({ balance: client_final_balance });
+            await contractor.update({ balance: contractor_final_balance });
+            await job.update({paid: true, paymentDate: new Date() });
+
+        } else {
+            return res.status(400).json({ error: 'Not enough money in your balance!' });
+        }
+
+        return res.status(200).json({message: "Success"});
+    } catch (error) {
+        return res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
 
 module.exports = app;
