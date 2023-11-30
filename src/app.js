@@ -40,6 +40,31 @@ app.get('/contracts/:id', getProfile, async (req, res) => {
         res.status(500).json({ error: 'Internal Server Error' });
     }
 
-})
+});
+
+/**
+ * @returns a list of contracts belonging to a user
+ */
+
+app.get('/contracts', getProfile, async (req, res) => {
+    const { Contract } = req.app.get('models');
+    const profile_id = req.profile.dataValues.id;
+    try {
+        const contracts = await Contract.findAll({
+            where: {
+                [Op.and]: [
+                    { [Op.or]: [{ ClientId: profile_id }, { ContractorId: profile_id }] },
+                    { status: { [Op.not]: 'terminated' } },
+                ],
+            },
+
+        });
+
+        res.status(200).json(contracts);
+    } catch (error) {
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 
 module.exports = app;
