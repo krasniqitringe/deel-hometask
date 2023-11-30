@@ -66,5 +66,38 @@ app.get('/contracts', getProfile, async (req, res) => {
     }
 });
 
+/**
+ * @returns all unpaid jobs for a user
+ */
+
+app.get('/jobs/unpaid', getProfile, async (req, res) => {
+    const { Contract, Job } = req.app.get('models');
+    const profile_id = req.profile.dataValues.id;
+
+    try {
+        const unpaidJobs = await Job.findAll({
+            include: {
+                model: Contract,
+                where: {
+                    [Op.and]: [
+                        { [Op.or]: [{ ClientId: profile_id }, { ContractorId: profile_id }] },
+                        { status: { [Op.not]: 'terminated' } },
+                    ],
+                },
+            },
+            where: {
+                [Op.or]: [
+                    { paid: { [Op.eq]: false } },
+                    { paid: { [Op.eq]: null } },
+                ],
+            },
+        });
+
+        res.status(200).json(unpaidJobs);
+    } catch (error) {
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 
 module.exports = app;
