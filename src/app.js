@@ -7,7 +7,7 @@ app.use(bodyParser.json());
 app.set('sequelize', sequelize)
 app.set('models', sequelize.models)
 
-const { Op, col, fn } = require('sequelize');
+const { Op, col, fn, literal } = require('sequelize');
 
 
 /**
@@ -233,5 +233,38 @@ app.get('/admin/best-profession', async (req, res) => {
       return res.status(500).json({ error: 'Internal Server Error' });
     }
 });
+
+
+app.get('/admin/best-clients', async (req, res) => {
+    try {
+      const { start, end, limit = 2 } = req.query;
+      const { Profile } = req.app.get('models');
+
+  
+      const startDate = start ? new Date(start) : null;
+      const endDate = end ? new Date(end) : new Date();
+  
+      const bestClients = await Profile.findAll({
+        attributes: [
+          'id',
+          'firstName',
+          [literal('(SELECT SUM(price) FROM Jobs WHERE ContractId IN (SELECT id FROM Contracts WHERE ClientId = Profile.id) AND paid = true AND paymentDate BETWEEN :startDate AND :endDate)'), 'paid'],
+        ],
+        replacements: { startDate, endDate },
+        where: {
+          type: 'client',
+        },
+        group: ['Profile.id'],
+        order: [[literal('paid'), 'DESC']],
+        limit: parseInt(limit),
+      });
+      
+      
+      res.status(200).json(bestClients);
+    } catch (error) {
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
 
 module.exports = app;
