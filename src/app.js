@@ -7,7 +7,7 @@ app.use(bodyParser.json());
 app.set('sequelize', sequelize)
 app.set('models', sequelize.models)
 
-const { Op } = require('sequelize');
+const { Op, col, fn } = require('sequelize');
 
 
 /**
@@ -36,7 +36,6 @@ app.get('/contracts/:id', getProfile, async (req, res) => {
 
         res.status(200).json(contract);
     } catch (error) {
-        console.log(error)
         res.status(500).json({ error: 'Internal Server Error' });
     }
 
@@ -148,5 +147,61 @@ app.post('/jobs/:job_id/pay', getProfile, async (req, res) => {
         return res.status(500).json({ error: 'Internal Server Error' });
     }
 });
+
+
+app.post('/balances/deposit/:userId', async (req, res) => {
+    const userId = req.params.userId;
+    const { Profile, Job, Contract } = req.app.get('models');
+  
+    try {
+  
+      if(!req.body.amount){
+          return res.status(400).json({ error: 'Please add amount' });
+      }
+      const client = await Profile.findByPk(userId);
+  
+      if (!client || client.type !== 'client') {
+        return res.status(404).json({ error: 'Client not found' });
+      }
+  
+      const unpaidJobs = await Job.findAll( {
+          attributes: [[fn('SUM', col('price')), 'totalUnpaid']],
+          include: {
+              model: Contract,
+              where: {
+                  [Op.and]: [
+                      { ClientId: userId },
+                      { status: { [Op.not]: 'terminated' } },
+                  ],
+              },
+          },
+          where: {
+              [Op.or]: [
+                  { paid: { [Op.eq]: false } },
+                  { paid: { [Op.eq]: null } },
+              ],
+          },
+          raw: true, 
+      });
+  
+      const totalUnpaid = unpaidJobs.length > 0 ? unpaidJobs[0].totalUnpaid : 0;
+      const depositAmount = parseFloat(req.body.amount);
+      const maxDeposit = 0.25 * totalUnpaid;
+  
+      if (depositAmount > maxDeposit) {
+        return res.status(400).json({ error: 'Deposit exceeds 25% of total jobs to pay!' });
+      }
+  
+      await client.update({
+        balance: client.balance + depositAmount,
+      });
+  
+      return res.status(200).json({ message: 'Deposit successfully finished' });
+    } catch (error) {
+        console.log(error)
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+  
 
 module.exports = app;
