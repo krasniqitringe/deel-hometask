@@ -204,4 +204,34 @@ app.post('/balances/deposit/:userId', async (req, res) => {
   });
   
 
+app.get('/admin/best-profession', async (req, res) => {
+    const { start, end } = req.query;
+
+    try {
+        const result = await sequelize.query(
+            `
+            SELECT p.profession, SUM(j.price) AS totalEarned
+            FROM Profiles p
+            JOIN Contracts c ON p.id = c.ContractorId
+            JOIN Jobs j ON c.id = j.ContractId
+            WHERE j.paid = true
+              AND j.paymentDate BETWEEN :start AND :end
+            GROUP BY p.profession
+            ORDER BY totalEarned DESC
+            LIMIT 1
+          `,
+            {
+              replacements: { start, end },
+              type: sequelize.QueryTypes.SELECT,
+            }
+          );
+
+
+        return res.status(200).json(result[0]);
+
+    } catch (error) {
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 module.exports = app;
